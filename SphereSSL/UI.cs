@@ -285,7 +285,7 @@ copy the token right, and don't forget those dang quotes!");
 
         public static void PrintFooter()
         {
-            string footer = "SphereSSL™ v1.0.0  © Kenneth Lasyone 2025";
+            string footer = "SphereSSL™ v1.0.0  -  ©Kenneth Lasyone 2025";
             int totalWidth = Console.WindowWidth;
             int padding = (totalWidth - footer.Length) / 2;
 
@@ -301,13 +301,13 @@ copy the token right, and don't forget those dang quotes!");
             
             Console.SetCursorPosition(0, Console.WindowHeight - 1);
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.Write(new string(' ', totalWidth)); // Clear bottom line first
+            Console.Write(new string(' ', totalWidth)); 
             Console.SetCursorPosition(0, Console.WindowHeight - 1);
             Console.Write(lineLeft + footer + lineRight);
             Console.ResetColor();
 
           
-            if (currentTop < Console.WindowHeight - 1) // Don’t overlap the footer
+            if (currentTop < Console.WindowHeight - 1) 
                 Console.SetCursorPosition(currentLeft, currentTop);
         }
 
