@@ -141,7 +141,7 @@ namespace SphereSSL
             var acmeService = new AcmeService();
             _order = new OrderDetails();
             _domain = "";
-            //_challangeDomain= $"_acme-challenge.{_domain}";
+     
 
             string email = "";
 
