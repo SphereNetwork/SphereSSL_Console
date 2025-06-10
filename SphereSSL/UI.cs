@@ -175,7 +175,6 @@ They’ll check that you own your domain, and boom — secure connection, baby!"
                 LearnMore();
             }
         }
-
         public static void WhatIsDNS01(bool learnMore = true)
         {
             if (learnMore)
