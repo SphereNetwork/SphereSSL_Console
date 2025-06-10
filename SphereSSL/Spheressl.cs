@@ -18,7 +18,7 @@ namespace SphereSSL
             switch (choice)
             {
                 case "1":
-                   
+
                     await AcmeService.CreateCert();
                     return;
                 case "2":

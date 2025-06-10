@@ -1,8 +1,6 @@
 ﻿using ACMESharp.Protocol;
 using ACMESharp.Protocol.Resources;
-using Org.BouncyCastle.OpenSsl;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Security;
+
 using System.Security.Cryptography.X509Certificates;
 using System.Net;
 using ACMESharp.Crypto;
@@ -21,6 +19,9 @@ using System.Runtime.ConstrainedExecution;
 using System.Text;
 using Newtonsoft.Json;
 using System.Runtime.Intrinsics.Arm;
+using Org.BouncyCastle.Crypto;
+using System.Diagnostics;
+
 
 namespace SphereSSL
 {
@@ -33,16 +34,23 @@ namespace SphereSSL
         private static OrderDetails _order;
         private static string _domain;
         private static string _challangeDomain;
+        private static bool _UseStaging = true; // Set to true for testing with Let's Encrypt staging environment
+        internal static AcmeService _acmeService;
 
         public AcmeService()
         {
-            _signer = new ESJwsTool();
-            _signer.Init();
+            _signer = LoadOrCreateSigner();
+
+
+
+            string _baseAddress = _UseStaging
+                ? "https://acme-staging-v02.api.letsencrypt.org/"
+                : "https://acme-v02.api.letsencrypt.org/";
 
             var http = new HttpClient
-            {
-                BaseAddress = new Uri("https://acme-v02.api.letsencrypt.org/")
-            };
+                {
+                    BaseAddress= new Uri(_baseAddress)
+                };
 
             _client = new AcmeProtocolClient(http, null, null, _signer);
         }
@@ -55,35 +63,26 @@ namespace SphereSSL
                 _client.Directory = _directory;
 
                 await _client.GetNonceAsync();
-                _account = await _client.CreateAccountAsync(
-                     new[] { $"mailto:{email}" },
-                     termsOfServiceAgreed: true,
-                     externalAccountBinding: null,
-                     throwOnExistingAccount: false
-                 );
-
-                if (_account == null)
-                {
-                    Console.WriteLine("Account creation failed._account null.");
-                    return false;
-                }
-                else
-                {
-                    Console.WriteLine($"Account created successfully. KID: {_account.Kid.ToString()}");
 
 
-                }
+                var account = await _client.CreateAccountAsync(
+                    new[] { $"mailto:{email}" },
+                    termsOfServiceAgreed: true,
+                    externalAccountBinding: null,
+                    throwOnExistingAccount: false
+                );
 
+                _account = account;
+                _client.Account = account;
+                using SHA256 algor = SHA256.Create();
+                var thumb = JwsHelper.ComputeThumbprint(_signer, algor);
 
-                // Optional log
-                Console.WriteLine($"✅ Account created. KID: {_account?.Kid}");
 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Account creation failed: {ex.Message}");
-                Console.WriteLine($"Error- {ex.StackTrace}");
+                Console.WriteLine($"[ERROR] Init failed: {ex.Message}");
                 return false;
             }
         }
@@ -104,15 +103,6 @@ namespace SphereSSL
             }
         }
 
-
-        //public async Task<string> GetDnsChallengeToken(OrderDetails order)
-        //{
-        //    var authz = await _client.GetAuthorizationDetailsAsync(order.Payload.Authorizations[0]);
-        //    var dnsChallenge = authz.Challenges.First(c => c.Type == "dns-01");
-
-        //    return dnsChallenge.Token;
-        //}
-
         public async Task<(string Domain, string DnsValue)> GetDnsChallengeToken(OrderDetails order)
         {
             var authz = await _client.GetAuthorizationDetailsAsync(order.Payload.Authorizations[0]);
@@ -120,7 +110,8 @@ namespace SphereSSL
 
        
             using SHA256 algor = SHA256.Create();
-            var thumbprint = JwsHelper.ComputeThumbprint(_signer, algor);
+            var thumbprintBytes = JwsHelper.ComputeThumbprint(_signer, algor);
+            var thumbprint = Base64UrlEncode(thumbprintBytes);
             var keyAuth = $"{dnsChallenge.Token}.{thumbprint}";
             byte[] hash = algor.ComputeHash(Encoding.UTF8.GetBytes(keyAuth));
             string dnsValue = Base64UrlEncode(hash);
@@ -138,33 +129,39 @@ namespace SphereSSL
 
         public async Task<(string Token, string Domain)> CreateUserAccountForCert()
         {
-            var acmeService = new AcmeService();
+          
             _order = new OrderDetails();
             _domain = "";
      
-
             string email = "";
 
-            Console.WriteLine("🌐 Initializing ACME Service...");
+            Console.WriteLine("Initializing ACME Service...");
 
             while (string.IsNullOrWhiteSpace(_domain))
             {
                 Console.Write("Enter your domain: ");
                 _domain = Console.ReadLine();
-                _domain = "spherevrf.info";
+                if (string.IsNullOrWhiteSpace(_domain))
+                {
+                    _domain = "spherevrf.info";
+                }
             }
 
             while (string.IsNullOrWhiteSpace(email))
             {
                 Console.Write("Enter your email: ");
                 email = Console.ReadLine();
-                email = "kl3mta3@gmail.com";
+
+                if (string.IsNullOrWhiteSpace(email))
+                {
+                    email = "kl3mta3@gmail.com";
+                }
             }
 
             try
             {
-                var accountSuccess = await acmeService.InitAsync(email);
-                if (!accountSuccess)
+                var account = await _acmeService.InitAsync(email);
+                if (!account)
                 {
                     Console.WriteLine("Account creation failed. Please check your email.");
                     return (null, null);
@@ -179,14 +176,13 @@ namespace SphereSSL
 
             try
             {
-                _order = await acmeService.BeginOrder(_domain);
+                _order = await _acmeService.BeginOrder(_domain);
                 if (_order.Payload.Status == "invalid")
                 {
                     Console.WriteLine("Order is invalid. Please check your domain.");
                     return (null, null);
                 }
 
-                Console.WriteLine("✅ Order created successfully!");
             }
             catch (Exception ex)
             {
@@ -197,23 +193,24 @@ namespace SphereSSL
 
         
 
-            var (domain, dnsValue) = await acmeService.GetDnsChallengeToken(_order);
+            var (domain, dnsValue) = await _acmeService.GetDnsChallengeToken(_order);
 
             return (dnsValue, domain);
         }
 
         public static async Task CreateCert()
         {
-
+            _acmeService = new AcmeService();
             Console.Clear();
-            var acmeService = new AcmeService();
-            Console.WriteLine("Creating SSL Certification...");
-
-            var (dnsChallengeToken, domain) = await acmeService.CreateUserAccountForCert();
+            var (dnsChallengeToken, domain) = await _acmeService.CreateUserAccountForCert();
 
             Console.WriteLine($"DNS Challenge Token: \"{dnsChallengeToken}\"");
+            Console.WriteLine($"Domain: {domain}");
+            Console.WriteLine($"Add this TXT record:");
+            Console.WriteLine($"Name: _acme-challenge.{domain}");
+            Console.WriteLine($"Value: {dnsChallengeToken}");
 
-            Console.WriteLine("Please add the TXT record to your DNS records.\n");
+            Console.WriteLine("\nPlease add the TXT record to your DNS records.\n");
             Console.WriteLine("Press 1: If you need help on what that means.");
             Console.WriteLine("Press 2: Once you have added the record to your DNS");
             Console.WriteLine("Press 3: If you want to exit the program.");
@@ -226,9 +223,8 @@ namespace SphereSSL
                     break;
 
                 case "2":
-                    Console.WriteLine("Waiting 60 seconds before submitting challenge to Let's Encrypt...");
-                    await Task.Delay(60000);
-                    Console.WriteLine("Verifying DNS record...");
+
+
                     await VerifyRecordWithSpinner(dnsChallengeToken, domain);
                     break;
 
@@ -241,6 +237,9 @@ namespace SphereSSL
                     break;
             }
 
+            Console.WriteLine("\nPress any key to return to the main menu...");
+            Console.ReadKey();
+            await Spheressl.MainMenu();
         }
 
         public static async Task VerifyRecord(string dnsChallengeToken, string domain)
@@ -251,7 +250,7 @@ namespace SphereSSL
             while (attempt < maxAttempts)
             {
                 Console.Clear();
-                Console.WriteLine($"🔍 Attempting DNS verification (try {attempt + 1} of {maxAttempts})...");
+                Console.WriteLine($" Attempting DNS verification (try {attempt + 1} of {maxAttempts})...");
                 Console.WriteLine("Verifying DNS record...");
 
                 bool verified = false;
@@ -356,210 +355,278 @@ namespace SphereSSL
         }
 
 
+
         public static async Task VerifyRecordWithSpinner(string dnsChallengeToken, string domain)
         {
-            const int maxAttempts = 3;
+            const int maxAttempts = 5; 
             int attempt = 0;
 
             while (attempt < maxAttempts)
             {
                 Console.Clear();
-                Console.WriteLine($"🔍 Attempting DNS verification (try {attempt + 1} of {maxAttempts})...");
-
+                Console.WriteLine($"Attempting DNS verification (try {attempt + 1} of {maxAttempts})...");
 
                 var cts = new CancellationTokenSource();
                 var spinnerTask = UI.ShowSpinnerAsync("Verifying DNS record...", cts.Token);
+                await Task.Delay(15000);
                 bool verified = false;
+
                 try
                 {
-                    Task<bool> checkTask = CheckTXTRecordAsync(dnsChallengeToken, domain);
-                    Task completed = await Task.WhenAny(checkTask, Task.Delay(10000));
+                    verified = await CheckTXTRecordMultipleDNS(dnsChallengeToken, domain);
 
-
-                    if (checkTask.IsCompleted)
-                    {
-                        verified = checkTask.Result;
-                    }
-
-                    cts.Cancel(); // stop the spinner
-                    await spinnerTask; // clean up spinner
-                }
-                catch (TaskCanceledException)
-                {
-                    
+                    cts.Cancel();
+                    await spinnerTask;
                 }
                 catch (Exception ex)
                 {
+                    cts.Cancel();
+                    await spinnerTask;
+                    Console.WriteLine($"\n[ERROR] DNS verification failed: {ex.Message}");
 
-                    Console.WriteLine($"\n[ERROR] CheckTXTRecordAsync failed: {ex.Message}");
-                    return;
+                    attempt++;
+                    if (attempt < maxAttempts)
+                    {
+                        Console.WriteLine($"\nRetrying in 30 seconds... (attempt {attempt + 1} of {maxAttempts})");
+                        await Task.Delay(30000);
+                    }
+                    continue;
                 }
 
                 if (verified)
                 {
-                    // Generate CSR 
-                    Console.WriteLine("\n🎉 Pre Verification successful!(The app sees your DNS on your site.) ");
-                    var key = KeyFactory.NewKey(KeyAlgorithm.RS256);
-                    var csrBuilder = new CertificationRequestBuilder(key);
-                    csrBuilder.AddName("CN", _domain);
-                    csrBuilder.SubjectAlternativeNames.Add(_domain);
-                    var csr = csrBuilder.Generate();
+                    Console.WriteLine("\n🎉 DNS verification successful! Starting certificate generation...");
 
                     try
                     {
-                        Console.WriteLine("\n📡 Submitting challenge to Let's Encrypt...");
-
-                        // Step 1: Get auth URL
-                        string authUrl = _order.Payload.Authorizations[0];
-
-                        Console.WriteLine($"Auth URL: {authUrl}");
-                        var authz = await _client.GetAuthorizationDetailsAsync(authUrl);
-                        var dnsChallenge = authz.Challenges.First(c => c.Type == "dns-01");
-
-                        Console.WriteLine($"Expected DNS name: {authz.Identifier.Value}");
-                        Console.WriteLine($"Challenge URL: {dnsChallenge.Url}");
-                        Console.WriteLine($"Challenge Token: {dnsChallenge.Token}");
-                        // Step 2: Submit the challenge
-                        await Task.Delay(5000);
-                        string challangeDomain = $"_acme-challenge.{_domain}";
-                       // dnsChallenge.Url = challangeDomain;
-                        await _client.AnswerChallengeAsync(dnsChallenge.Url);
-
- 
-
-
-                        bool challengeValid = false;
-                        for (int i = 0; i < 10; i++)
-                        {
-                            var auth = await _client.GetAuthorizationDetailsAsync(authUrl);
-                            Console.WriteLine($"Challenge status: {auth.Status}");
-
-                            if (auth.Status == "valid")
-                            {
-                                challengeValid = true;
-                                break;
-                            }
-
-                            if (auth.Status == "invalid")
-                            {
-                                Console.WriteLine("❌ Challenge rejected.");
-                                return;
-                            }
-
-                            await Task.Delay(2000);
-                        }
-
-                        if (!challengeValid)
-                        {
-                            Console.WriteLine("❌ Challenge did not validate in time.");
-                            return;
-                        }
-
-
-
-
-                        Console.WriteLine("✅ Challenge validated! Finalizing certificate...");
-
-
-                        // Finalize order
-                        int finalizeRetries = 3;
-                        int waitBetweenFinalizeMs = 3000;
-                        bool finalizeSuccess = false;
-
-                        //Console.WriteLine("🔍 DNS TXT record should exist at:");
-                        //Console.WriteLine($"_acme-challenge.{_domain}");
-                        //Console.WriteLine($"Expected value: \"{csr}\"");
-
-                        //Console.WriteLine("Pause before submission? [Press any key]");
-                        //Console.ReadKey();
-
-                        for (int i = 1; i <= finalizeRetries; i++)
-                        {
-                            try
-                            {
-                                Console.WriteLine($"🛠 Finalizing order (Attempt {i}/{finalizeRetries})...");
-                                await _client.FinalizeOrderAsync(_order.Payload.Finalize, csr);
-
-                                finalizeSuccess = true;
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"❌ Finalize attempt {i} failed: {ex.Message}");
-                                await Task.Delay(waitBetweenFinalizeMs);
-                            }
-                        }
-
-
-                        if (!finalizeSuccess)
-                        {
-                            Console.WriteLine("❌ All finalize attempts failed. Please check your order and try again.");
-                            Console.WriteLine($"1. Try again?");
-                            Console.WriteLine($"2. Restart?");
-                            Console.WriteLine($"3. Exit?");
-
-                            string choice = Console.ReadLine();
-                            switch (choice)
-                            {
-                                case "1":
-
-                                    await _client.FinalizeOrderAsync(_order.Payload.Finalize, csr);
-                                    return;
-                                case "2":
-                                    // Exit the program
-                                    await Spheressl.MainMenu();
-                                    return;
-                                default:
-                                    Console.WriteLine("Invalid choice. Exiting.");
-                                    Environment.Exit(0);
-                                    return;
-                            }
-
-
-
-                        }
-
-                        // Download certificate
-
-                        var certUrl = _order.Payload.Certificate;
-                        if (string.IsNullOrEmpty(certUrl))
-                        {
-
-                            Console.WriteLine("Certificate URL is missing from the finalized order.");
-                            Console.WriteLine("Press any key to start Over.");
-                            Console.ReadKey();
-                            await Spheressl.MainMenu();
-
-                        }
-
-                        using var http = new HttpClient();
-                        var certPem = await http.GetStringAsync(certUrl);
-                        await DownloadCertificateAsync(certPem, key.ToPem());
-
-
-                        Console.WriteLine("✅ SSL Certificate downloaded and saved as cert.pem!");
+                        await ProcessCertificateGeneration(dnsChallengeToken, domain);
+                        return; 
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[ERROR] Certificate finalization failed: {ex.Message}");
+                        Console.WriteLine($"[ERROR] Certificate generation failed: {ex.Message}");
+                        Console.WriteLine($"Stack trace: {ex.StackTrace}");
 
-
+                        // Check if it's a recoverable error
+                        if (ex.Message.Contains("urn:ietf:params:acme:error:dns") ||
+                            ex.Message.Contains("urn:ietf:params:acme:error:connection"))
+                        {
+                            Console.WriteLine("This appears to be a DNS propagation issue. Retrying...");
+                        }
+                        else
+                        {
+                            Console.WriteLine("This appears to be a non-recoverable error.");
+                            return;
+                        }
                     }
                 }
-
-                Console.WriteLine("\n❌ Verification failed. DNS record not found or incorrect.");
-                Console.WriteLine($"Make sure the TXT record \"{dnsChallengeToken}\" is saved and includes the quotes!");
+                else
+                {
+                    Console.WriteLine($"\n❌ DNS verification failed (attempt {attempt + 1})");
+                    Console.WriteLine($"Expected TXT record at: _acme-challenge.{domain}");
+                    Console.WriteLine($"Expected value: {dnsChallengeToken}");
+                    Console.WriteLine("Make sure:");
+                    Console.WriteLine("1. The TXT record is correctly added to your DNS");
+                    Console.WriteLine("2. The record name is exactly: _acme-challenge");
+                    Console.WriteLine("3. The record value matches exactly (case-sensitive)");
+                    Console.WriteLine("4. DNS changes have had time to propagate");
+                }
 
                 attempt++;
 
                 if (attempt < maxAttempts)
                 {
-                    Console.WriteLine("\nPress any key to retry verification...");
-                    Console.ReadKey();
+                    Console.WriteLine($"\nWaiting 30 seconds before next attempt...");
+                    await Task.Delay(30000);
                 }
             }
 
-            Console.WriteLine("\n💥 All attempts failed. Please double-check your DNS settings and try again later.");
+            Console.WriteLine($"\n💥 All {maxAttempts} attempts failed. Please:");
+            Console.WriteLine("1. Double-check your DNS TXT record");
+            Console.WriteLine("2. Wait for DNS propagation (can take up to 24 hours)");
+            Console.WriteLine("3. Try again later");
+        }
+
+
+        private static async Task ProcessCertificateGeneration(string dnsChallengeToken, string domain)
+        {
+            // Generate CSR first
+            var key = KeyFactory.NewKey(KeyAlgorithm.RS256);
+            var csrBuilder = new CertificationRequestBuilder(key);
+            csrBuilder.AddName("CN", _domain);
+            csrBuilder.SubjectAlternativeNames.Add(_domain);
+            var csr = csrBuilder.Generate();
+
+            Console.WriteLine("Submitting challenge to Let's Encrypt...");
+
+            // Get authorization details
+            string authUrl = _order.Payload.Authorizations[0];
+            var authz = await _client.GetAuthorizationDetailsAsync(authUrl);
+            var dnsChallenge = authz.Challenges.First(c => c.Type == "dns-01");
+
+            Console.WriteLine($"Domain: {authz.Identifier.Value}");
+            Console.WriteLine($"Challenge URL: {dnsChallenge.Url}");
+            Console.WriteLine($"Challenge status: {dnsChallenge.Status}");
+
+            // Only submit challenge if it's pending
+            if (dnsChallenge.Status == "pending")
+            {
+                await _client.AnswerChallengeAsync(dnsChallenge.Url);
+                Console.WriteLine("Challenge submitted, waiting for validation...");
+            }
+            else
+            {
+                Console.WriteLine($"Challenge already in status: {dnsChallenge.Status}");
+            }
+
+           
+            bool challengeValid = false;
+            int maxPollingAttempts = 30; // 30 attempts * 5 seconds = 2.5 minutes max
+
+            for (int i = 0; i < maxPollingAttempts; i++)
+            {
+                try
+                {
+                    var updatedAuthz = await _client.GetAuthorizationDetailsAsync(authUrl);
+                    var updatedChallenge = updatedAuthz.Challenges.First(c => c.Type == "dns-01");
+
+                    Console.WriteLine($"Polling attempt {i + 1}: Authorization status = {updatedAuthz.Status}, Challenge status = {updatedChallenge.Status}");
+
+                    if (updatedAuthz.Status == "valid" && updatedChallenge.Status == "valid")
+                    {
+                        challengeValid = true;
+                        Console.WriteLine("Challenge validated successfully!");
+                        Console.Clear();
+                        break;
+                    }
+
+                    if (updatedAuthz.Status == "invalid" || updatedChallenge.Status == "invalid")
+                    {
+                        // Get error details
+                        string errorDetail = "Unknown error";
+                        if (updatedChallenge.Error != null)
+                        {
+                            errorDetail = $"{updatedChallenge.Error.ToString()}";
+                        }
+
+                        throw new Exception($"Challenge validation failed. Error: {errorDetail}");
+                    }
+
+                    if (updatedAuthz.Status == "pending" || updatedChallenge.Status == "pending")
+                    {
+                        Console.WriteLine("Still pending, waiting 5 seconds...");
+                        await Task.Delay(5000);
+                        continue;
+                    }
+
+                    // Handle other statuses
+                    Console.WriteLine($"Unexpected status - Auth: {updatedAuthz.Status}, Challenge: {updatedChallenge.Status}");
+                    await Task.Delay(5000);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error during polling attempt {i + 1}: {ex.Message}");
+                    if (i == maxPollingAttempts - 1) throw; // Re-throw on last attempt
+                    await Task.Delay(5000);
+                }
+            }
+
+            if (!challengeValid)
+            {
+                throw new Exception($"Challenge validation timed out after {maxPollingAttempts} attempts");
+            }
+
+            Console.WriteLine("🛠 Finalizing certificate order...");
+
+            // Finalize the order
+            await _client.FinalizeOrderAsync(_order.Payload.Finalize, csr);
+
+            // Wait for certificate to be ready
+            Console.WriteLine("⏳ Waiting for certificate to be issued...");
+            OrderDetails finalizedOrder;
+            int certWaitAttempts = 0;
+            const int maxCertWaitAttempts = 20;
+
+            do
+            {
+                await Task.Delay(3000);
+                finalizedOrder = await _client.GetOrderDetailsAsync(_order.OrderUrl);
+                Console.WriteLine($"Certificate status: {finalizedOrder.Payload.Status}");
+
+                certWaitAttempts++;
+                if (certWaitAttempts >= maxCertWaitAttempts)
+                {
+                    throw new Exception("Certificate issuance timed out");
+                }
+
+            } while (finalizedOrder.Payload.Status == "processing");
+
+            if (finalizedOrder.Payload.Status != "valid")
+            {
+                throw new Exception($"Certificate order failed with status: {finalizedOrder.Payload.Status}");
+            }
+
+            // Download certificate
+            var certUrl = finalizedOrder.Payload.Certificate;
+            if (string.IsNullOrEmpty(certUrl))
+            {
+                throw new Exception("Certificate URL is missing from the finalized order");
+            }
+
+            Console.WriteLine("📥 Downloading certificate...");
+            using var http = new HttpClient();
+            var certPem = await http.GetStringAsync(certUrl);
+            await DownloadCertificateAsync(certPem, key.ToPem());
+
+            Console.WriteLine("🎉 SSL Certificate successfully generated and downloaded!");
+        }
+
+
+        private static async Task<bool> CheckTXTRecordMultipleDNS(string dnsChallengeToken, string domain)
+        {
+            string fullRecordName = $"_acme-challenge.{domain}";
+
+            // Try multiple DNS servers for better reliability
+            var dnsServers = new[]
+            {
+                IPAddress.Parse("8.8.8.8"), // Google
+                IPAddress.Parse("1.1.1.1"), // Cloudflare
+                IPAddress.Parse("208.67.222.222"), // OpenDNS
+                IPAddress.Parse("9.9.9.9") // Quad9
+            };
+
+            foreach (var dnsServer in dnsServers)
+            {
+                try
+                {
+                    var lookup = new LookupClient(dnsServer);
+                    Console.WriteLine($"🔍 Checking DNS server {dnsServer} for TXT record at {fullRecordName}");
+
+                    var result = await lookup.QueryAsync(fullRecordName, QueryType.TXT);
+                    var txtRecords = result.Answers.TxtRecords();
+
+                    foreach (var record in txtRecords)
+                    {
+                        foreach (var txt in record.Text)
+                        {
+                            Console.WriteLine($"Found TXT record: {txt}");
+                            // Compare without quotes - DNS might strip them
+                            if (txt.Trim('"') == dnsChallengeToken.Trim('"'))
+                            {
+                                Console.WriteLine($"✅ Match found on DNS server {dnsServer}!");
+                                return true;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ DNS server {dnsServer} failed: {ex.Message}");
+                    continue; // Try next DNS server
+                }
+            }
+
+            return false;
         }
 
         public static async Task RequestCertAsync(string domain)
@@ -578,6 +645,8 @@ namespace SphereSSL
             }
         }
 
+       
+
         private static async Task DownloadCertificateAsync(string certPem, string keyPem)
         {
             Console.WriteLine("✅ Certificate is ready!");
@@ -589,29 +658,52 @@ namespace SphereSSL
 
             Console.Write("Enter the folder path to save your certificate files (default: current directory): ");
             var pathChoice = Console.ReadLine()?.Trim();
-            if (string.IsNullOrWhiteSpace(pathChoice))
-                pathChoice = Directory.GetCurrentDirectory();
 
-            Directory.CreateDirectory(pathChoice); // make sure it exists
+            if (Path.GetPathRoot(pathChoice)?.TrimEnd('\\') == pathChoice.TrimEnd('\\'))
+            {
+                Console.WriteLine("❌ Cannot save directly to the root of a drive. Please choose a subfolder.");
+                return;
+            }
+
+
+            if (string.IsNullOrWhiteSpace(pathChoice))
+            {
+                pathChoice = Directory.GetCurrentDirectory()+"/certs";
+            }
+            else if (!Path.IsPathRooted(pathChoice))
+            {
+                pathChoice = Path.Combine(Directory.GetCurrentDirectory(), pathChoice);
+            }
+            pathChoice = Path.GetFullPath(pathChoice);
+
+
+            Directory.CreateDirectory(pathChoice);
 
             try
             {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string prefix = "cert_" + timestamp + "_";
+
                 if (fileChoice == "2")
                 {
-                    // Combined cert + key
-                    string combinedPath = Path.Combine(pathChoice, "combined.pem");
+
+                    string combinedPath = Path.Combine(pathChoice, $"{prefix}combined.pem");
                     File.WriteAllText(combinedPath, certPem + "\n" + keyPem);
                     Console.WriteLine($"📄 Saved combined PEM: {combinedPath}");
                 }
-                else
+                else if (fileChoice == "1")
                 {
-                    // Separate .crt and .key
-                    string certPath = Path.Combine(pathChoice, "certificate.crt");
-                    string keyPath = Path.Combine(pathChoice, "private.key");
+                    string certPath = Path.Combine(pathChoice,$"{prefix}certificate.crt");
+                    string keyPath = Path.Combine(pathChoice, $"{prefix}private.key");
                     File.WriteAllText(certPath, certPem);
                     File.WriteAllText(keyPath, keyPem);
                     Console.WriteLine($"📄 Saved certificate: {certPath}");
                     Console.WriteLine($"🔐 Saved private key: {keyPath}");
+                }
+                else if (fileChoice != "1" && fileChoice != "2")
+                {
+                    Console.WriteLine("⚠️ Invalid choice. Defaulting to combined file (.pem).");
+                    fileChoice = "2";
                 }
             }
             catch (Exception ex)
@@ -619,43 +711,44 @@ namespace SphereSSL
                 Console.WriteLine($"❌ Error saving files: {ex.Message}");
             }
 
-            await Task.Delay(500); // just a little polish
+            await Task.Delay(500);
+            try
+            {
+                Process.Start("explorer.exe", pathChoice);
+            }
+            catch { /* silently fail if not Windows or explorer not available */ }
         }
 
         private static async Task<bool> CheckTXTRecordAsync(string dnsChallengeToken, string domain)
         {
-            var lookup = new LookupClient();
-            Console.WriteLine($"Domain for Check. {domain}");
-            string fullRecordName = $"_acme-challenge.{domain}";
-
-            try
-            {
-                Console.WriteLine($"🔍 Looking up TXT record {dnsChallengeToken} for {fullRecordName}");
-                Console.WriteLine($"At the Location {fullRecordName}");
-
-                var result = await lookup.QueryAsync(fullRecordName, QueryType.TXT);
-                var txtRecords = result.Answers.TxtRecords();
-
-                foreach (var record in txtRecords)
-                {
-                    foreach (var txt in record.Text)
-                    {
-                        Console.WriteLine($"Found TXT: {txt}");
-                        if (txt.Contains(dnsChallengeToken.Trim('"')))
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[DNS ERROR] {ex.Message}");
-            }
-
-            return false;
+            return await CheckTXTRecordMultipleDNS(dnsChallengeToken, domain);
         }
 
-        
+        private static ESJwsTool LoadOrCreateSigner(string path = "signer.pem")
+        {
+            var signer = new ESJwsTool();
+
+            if (File.Exists(path))
+            {
+                Console.WriteLine("🔐 Loading signer from disk...");
+                string pem = File.ReadAllText(path);
+                signer.Import(pem); 
+            }
+            else
+            {
+                Console.WriteLine("🧪 Creating new signer...");
+                
+                signer.Init();
+                string exported = signer.Export();
+                File.WriteAllText(path, exported); 
+               
+                Console.WriteLine("💾 Signer saved to disk.");
+            }
+
+            _signer = signer;
+            return signer;
+        }
+
+
     }
 }
