@@ -35,7 +35,7 @@ Perfect for devs who need certificates fast, without wrestling a yak in a cloud 
 1. **Clone the repo:**
 
     ```bash
-    git clone https://github.com/YOURUSERNAME/SphereSSL.git
+    git clone https://github.com/kl3mta3/SphereSSL.git
     cd SphereSSL
     ```
 
