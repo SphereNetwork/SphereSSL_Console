@@ -11,42 +11,51 @@ namespace SphereSSL
         public static void PrintLogo()
         {
             Console.WriteLine(@"
-              ____  ____  _   _ _____ ____  _____  
-             / ___||  _ \| | | | ____|  _ \| ____| 
-             \___ \| |_) | |_| |  _| | |_) |  _|    
-              ___) |  __/|  _  | |___|  _ <| |___   
-             |____/|_|   |_| |_|_____|_| \_\_____| 
-                        ____  ____  _
-                       / ___|/ ___|| |
-                       \___ \\___ \| |
-                        ___)  ___) | |___
-                       |____/|____/\_____|");
+ ____  ____  _   _ _____ ____  _____  
+/ ___||  _ \| | | | ____|  _ \| ____| 
+\___ \| |_) | |_| |  _| | |_) |  _|    
+ ___) |  __/|  _  | |___|  _ <| |___   
+|____/|_|   |_| |_|_____|_| \_\_____| 
+         ____  ____  _
+        / ___|/ ___|| |
+        \___ \\___ \| |
+         ___)  ___) | |___
+        |____/|____/\_____|
+
+         SSL Made Easy");
+
+
         }
 
-        public static void PrintIntroductionScreen()
+        public static async Task PrintIntroductionScreen()
         {
-            PrintLogo();
+           // PrintLogo();
             Console.WriteLine(@"
 
-SphereSSL is used to create SSL certifications using ACME and Let'sEncrypt
-It is not intended to be a full-featured ACME client.
-It is intended to be a simple console application that can be used to create
-SSL certifications using ACME and Let'sEncrypt.
+SphereSSL helps you generate SSL certificates in the simplest, most user-friendly way possible.
 
-This app uses DNS-01 challenge to verify domain ownership.
+It’s a lightweight console app designed to create SSL certificates using ACME and Let’s Encrypt.
+It is not meant to be a full-featured ACME client.
+
+This app uses the DNS-01 challenge to prove domain ownership.
 To use this app, you need to have a domain and DNS access.
 
 It's easy to get the SSL certification using DNS-01, but you need to know some basics about domains and DNS.
 If you do not know what either of those are or how to get them, please choose Learn More before continuing.
 
-If you don't have a domain, you can use a domain provider like Cloudflare to get one at cost. (about $10 for a .com even less for others).
-Avoid using free domains like .tk or .ml as they are often blacklisted by Let's Encrypt.(Their providers can also be shady).
+If you don't have a domain, you can use a domain provider like Cloudflare to get one at cost. 
+(About $10 for a .com even less for others).
 
-");
-            Console.WriteLine("Press any key to continue...");
+Avoid using free domains like .tk or .ml as they are often blacklisted by Let's Encrypt.
+(Their providers can also be shady).");
+
+            Console.WriteLine("\nPress any key to continue...");
+
+            PrintFooter();
+
             Console.ReadKey();
             Console.Clear();
-            PrintMainSelection();
+       
         }
 
         public static void LearnMore()
@@ -59,6 +68,8 @@ Avoid using free domains like .tk or .ml as they are often blacklisted by Let's 
             Console.WriteLine("4. DNS-01");
             Console.WriteLine("5. How it Works");
             Console.WriteLine("6. Back to Main Menu");
+
+            PrintFooter();
 
             var choice = Console.ReadLine();
 
@@ -104,6 +115,7 @@ When you register a domain, you are essentially renting it for a period of time 
 If you don't have a domain, you can use a domain provider like Cloudflare to get one at cost. (about $10 for a .com even less for others).
 Avoid using free domains like.tk or .ml as they are often blacklisted by Let's Encrypt.(Their providers can also be shady).");
 
+            PrintFooter();
 
             if (learnMore)
             {
@@ -137,6 +149,8 @@ records to your domain’s DNS settings to prove you own the domain.
 
 So yeah, DNS is kinda like your Internet matchmaker. It connects names to addresses.");
 
+            PrintFooter();
+
             if (learnMore)
             {
                 Console.WriteLine("Press any key to continue...");
@@ -167,6 +181,7 @@ stronger cousin — but we still say SSL out of habit. Old habits die hard, y'kn
 
 To get SSL on your site, you need a certificate from a trusted authority like Let's Encrypt. 
 They’ll check that you own your domain, and boom — secure connection, baby!");
+            PrintFooter();
             if (learnMore)
             {
                 Console.WriteLine("Press any key to continue...");
@@ -197,6 +212,7 @@ finds the correct token, and goes: 'Yup, they own it!' — then boom, you’re a
 DNS-01 is super useful if you're generating a cert for a domain that doesn't have a website 
 yet or doesn't support HTTP — or when you're working with wildcard certificates like '*.example.com'.");
 
+            PrintFooter();
             if (learnMore)
             {
                 Console.WriteLine("Press any key to continue...");
@@ -245,6 +261,7 @@ Here's what you’ll be doing, step-by-step:
 That’s it! You don't need to be a wizard to get HTTPS — just follow the steps, 
 copy the token right, and don't forget those dang quotes!");
 
+            PrintFooter();
             if (learnMore)
             {
                 Console.WriteLine("Press any key to continue...");
@@ -258,11 +275,40 @@ copy the token right, and don't forget those dang quotes!");
         {
             Console.Clear();
             PrintLogo();
-            Console.WriteLine("Make a selection.");
+            Console.WriteLine("\nMake a selection.");
             Console.WriteLine("1. Create SSL Certification");
             Console.WriteLine("2. Learn More");
             Console.WriteLine("3. Exit");
+            PrintFooter();
 
+        }
+
+        public static void PrintFooter()
+        {
+            string footer = "SphereSSL™ v1.0.0  © Kenneth Lasyone 2025";
+            int totalWidth = Console.WindowWidth;
+            int padding = (totalWidth - footer.Length) / 2;
+
+           
+            padding = Math.Max(0, padding);
+            string lineLeft = new string('─', padding);
+            string lineRight = new string('─', totalWidth - padding - footer.Length);
+
+          
+            int currentLeft = Console.CursorLeft;
+            int currentTop = Console.CursorTop;
+
+            
+            Console.SetCursorPosition(0, Console.WindowHeight - 1);
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.Write(new string(' ', totalWidth)); // Clear bottom line first
+            Console.SetCursorPosition(0, Console.WindowHeight - 1);
+            Console.Write(lineLeft + footer + lineRight);
+            Console.ResetColor();
+
+          
+            if (currentTop < Console.WindowHeight - 1) // Don’t overlap the footer
+                Console.SetCursorPosition(currentLeft, currentTop);
         }
 
         public static void HowToAddTXTRecord(bool learnMore= true)
@@ -302,6 +348,8 @@ It’s easy, I promise:
 Once the record is visible to the certificate authority, you're golden. 
 We’ll take it from there and fetch your shiny new cert!");
 
+            PrintFooter();
+
             if (learnMore)
             {
                 Console.WriteLine("Press any key to continue...");
@@ -317,12 +365,13 @@ We’ll take it from there and fetch your shiny new cert!");
             int idx = 0;
 
             Console.Write($"\n{message} ");
-
+            PrintFooter();
             while (!token.IsCancellationRequested)
             {
                 Console.Write(spinner[idx]);
                 await Task.Delay(100); // use async delay!
                 Console.Write("\b");
+                PrintFooter();
 
                 idx = (idx + 1) % spinner.Length;
             }

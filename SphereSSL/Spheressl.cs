@@ -11,7 +11,11 @@ namespace SphereSSL
     {
         public static async Task MainMenu()
         {
+
+            await UI.PrintIntroductionScreen();
+
             UI.PrintMainSelection();
+           
 
             var choice = Console.ReadLine();
 
@@ -42,6 +46,24 @@ namespace SphereSSL
             RandomNumberGenerator.Fill(randomBytes);
 
             return BitConverter.ToString(randomBytes).Replace("-", "").ToLower();
+        }
+
+        internal static string PromptFor(string label)
+        {
+            string input;
+            do
+            {
+                Console.Write($"Enter your {label}: ");
+                input = Console.ReadLine()?.Trim();
+
+                if (string.IsNullOrWhiteSpace(input))
+                {
+                    Console.WriteLine($"❌ You must enter a valid {label}.");
+                }
+
+            } while (string.IsNullOrWhiteSpace(input));
+
+            return input;
         }
     }
 }

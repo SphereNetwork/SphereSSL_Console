@@ -34,7 +34,7 @@ namespace SphereSSL
         private static OrderDetails _order;
         private static string _domain;
         private static string _challangeDomain;
-        private static bool _UseStaging = true; // Set to true for testing with Let's Encrypt staging environment
+        private static bool _UseStaging = false; // Set to true for testing with Let's Encrypt staging environment
         internal static AcmeService _acmeService;
 
         public AcmeService()
@@ -134,29 +134,12 @@ namespace SphereSSL
             _domain = "";
      
             string email = "";
+            UI.PrintFooter();
+            Console.WriteLine("Initializing SphereSSL...");
 
-            Console.WriteLine("Initializing ACME Service...");
+            _domain = Spheressl.PromptFor("Domain");
+            email = Spheressl.PromptFor("Email");
 
-            while (string.IsNullOrWhiteSpace(_domain))
-            {
-                Console.Write("Enter your domain: ");
-                _domain = Console.ReadLine();
-                if (string.IsNullOrWhiteSpace(_domain))
-                {
-                    _domain = "spherevrf.info";
-                }
-            }
-
-            while (string.IsNullOrWhiteSpace(email))
-            {
-                Console.Write("Enter your email: ");
-                email = Console.ReadLine();
-
-                if (string.IsNullOrWhiteSpace(email))
-                {
-                    email = "kl3mta3@gmail.com";
-                }
-            }
 
             try
             {
@@ -364,6 +347,7 @@ namespace SphereSSL
             while (attempt < maxAttempts)
             {
                 Console.Clear();
+                UI.PrintFooter();
                 Console.WriteLine($"Attempting DNS verification (try {attempt + 1} of {maxAttempts})...");
 
                 var cts = new CancellationTokenSource();
@@ -395,7 +379,7 @@ namespace SphereSSL
 
                 if (verified)
                 {
-                    Console.WriteLine("\n🎉 DNS verification successful! Starting certificate generation...");
+                    Console.WriteLine("\nDNS verification successful! Starting certificate generation...");
 
                     try
                     {
@@ -422,7 +406,7 @@ namespace SphereSSL
                 }
                 else
                 {
-                    Console.WriteLine($"\n❌ DNS verification failed (attempt {attempt + 1})");
+                    Console.WriteLine($"\nDNS verification failed (attempt {attempt + 1})");
                     Console.WriteLine($"Expected TXT record at: _acme-challenge.{domain}");
                     Console.WriteLine($"Expected value: {dnsChallengeToken}");
                     Console.WriteLine("Make sure:");
@@ -441,7 +425,7 @@ namespace SphereSSL
                 }
             }
 
-            Console.WriteLine($"\n💥 All {maxAttempts} attempts failed. Please:");
+            Console.WriteLine($"\nAll {maxAttempts} attempts failed. Please:");
             Console.WriteLine("1. Double-check your DNS TXT record");
             Console.WriteLine("2. Wait for DNS propagation (can take up to 24 hours)");
             Console.WriteLine("3. Try again later");
@@ -458,7 +442,7 @@ namespace SphereSSL
             var csr = csrBuilder.Generate();
 
             Console.WriteLine("Submitting challenge to Let's Encrypt...");
-
+            UI.PrintFooter();
             // Get authorization details
             string authUrl = _order.Payload.Authorizations[0];
             var authz = await _client.GetAuthorizationDetailsAsync(authUrl);
@@ -497,6 +481,7 @@ namespace SphereSSL
                         challengeValid = true;
                         Console.WriteLine("Challenge validated successfully!");
                         Console.Clear();
+                        UI.PrintFooter();
                         break;
                     }
 
@@ -573,12 +558,12 @@ namespace SphereSSL
                 throw new Exception("Certificate URL is missing from the finalized order");
             }
 
-            Console.WriteLine("📥 Downloading certificate...");
+            Console.WriteLine("Downloading certificate...");
             using var http = new HttpClient();
             var certPem = await http.GetStringAsync(certUrl);
             await DownloadCertificateAsync(certPem, key.ToPem());
 
-            Console.WriteLine("🎉 SSL Certificate successfully generated and downloaded!");
+            Console.WriteLine("SSL Certificate successfully generated and downloaded!");
         }
 
 
@@ -586,7 +571,7 @@ namespace SphereSSL
         {
             string fullRecordName = $"_acme-challenge.{domain}";
 
-            // Try multiple DNS servers for better reliability
+       
             var dnsServers = new[]
             {
                 IPAddress.Parse("8.8.8.8"), // Google
@@ -600,8 +585,8 @@ namespace SphereSSL
                 try
                 {
                     var lookup = new LookupClient(dnsServer);
-                    Console.WriteLine($"🔍 Checking DNS server {dnsServer} for TXT record at {fullRecordName}");
-
+                    Console.WriteLine($"Checking DNS server {dnsServer} for TXT record at {fullRecordName}");
+                    UI.PrintFooter();
                     var result = await lookup.QueryAsync(fullRecordName, QueryType.TXT);
                     var txtRecords = result.Answers.TxtRecords();
 
@@ -613,7 +598,7 @@ namespace SphereSSL
                             // Compare without quotes - DNS might strip them
                             if (txt.Trim('"') == dnsChallengeToken.Trim('"'))
                             {
-                                Console.WriteLine($"✅ Match found on DNS server {dnsServer}!");
+                                Console.WriteLine($"Match found on DNS server {dnsServer}!");
                                 return true;
                             }
                         }
@@ -621,7 +606,7 @@ namespace SphereSSL
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ DNS server {dnsServer} failed: {ex.Message}");
+                    Console.WriteLine($"DNS server {dnsServer} failed: {ex.Message}");
                     continue; // Try next DNS server
                 }
             }
@@ -649,7 +634,8 @@ namespace SphereSSL
 
         private static async Task DownloadCertificateAsync(string certPem, string keyPem)
         {
-            Console.WriteLine("✅ Certificate is ready!");
+            UI.PrintFooter();
+            Console.WriteLine("Certificate is ready!");
             Console.WriteLine("How would you like to save it?");
             Console.WriteLine("1. Separate files (.crt and .key)");
             Console.WriteLine("2. Combined file (.pem with both cert and key)");
@@ -661,7 +647,7 @@ namespace SphereSSL
 
             if (Path.GetPathRoot(pathChoice)?.TrimEnd('\\') == pathChoice.TrimEnd('\\'))
             {
-                Console.WriteLine("❌ Cannot save directly to the root of a drive. Please choose a subfolder.");
+                Console.WriteLine("Cannot save directly to the root of a drive. Please choose a subfolder.");
                 return;
             }
 
@@ -689,7 +675,8 @@ namespace SphereSSL
 
                     string combinedPath = Path.Combine(pathChoice, $"{prefix}combined.pem");
                     File.WriteAllText(combinedPath, certPem + "\n" + keyPem);
-                    Console.WriteLine($"📄 Saved combined PEM: {combinedPath}");
+                    Console.WriteLine($"Saved combined PEM: {combinedPath}");
+
                 }
                 else if (fileChoice == "1")
                 {
@@ -697,24 +684,27 @@ namespace SphereSSL
                     string keyPath = Path.Combine(pathChoice, $"{prefix}private.key");
                     File.WriteAllText(certPath, certPem);
                     File.WriteAllText(keyPath, keyPem);
-                    Console.WriteLine($"📄 Saved certificate: {certPath}");
-                    Console.WriteLine($"🔐 Saved private key: {keyPath}");
+                    Console.WriteLine($"Saved certificate: {certPath}");
+                    Console.WriteLine($"Saved private key: {keyPath}");
+                    await Task.Delay(500);
+
                 }
                 else if (fileChoice != "1" && fileChoice != "2")
                 {
-                    Console.WriteLine("⚠️ Invalid choice. Defaulting to combined file (.pem).");
+                    Console.WriteLine("Invalid choice. Defaulting to combined file (.pem).");
                     fileChoice = "2";
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error saving files: {ex.Message}");
+                Console.WriteLine($"Error saving files: {ex.Message}");
             }
 
-            await Task.Delay(500);
+            await Task.Delay(500); // small delay to ensure files are written
+
             try
             {
-                Process.Start("explorer.exe", pathChoice);
+                Process.Start("explorer.exe", pathChoice); // Open the folder in Windows Explorer
             }
             catch { /* silently fail if not Windows or explorer not available */ }
         }
@@ -730,19 +720,14 @@ namespace SphereSSL
 
             if (File.Exists(path))
             {
-                Console.WriteLine("🔐 Loading signer from disk...");
                 string pem = File.ReadAllText(path);
                 signer.Import(pem); 
             }
             else
-            {
-                Console.WriteLine("🧪 Creating new signer...");
-                
+            {                
                 signer.Init();
                 string exported = signer.Export();
                 File.WriteAllText(path, exported); 
-               
-                Console.WriteLine("💾 Signer saved to disk.");
             }
 
             _signer = signer;
