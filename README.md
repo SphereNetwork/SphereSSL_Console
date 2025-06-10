@@ -1,12 +1,5 @@
 # 🌐 SphereSSL - SSL Made Easy™
 
-**Version:** 1.0.0  
-**Author:** Kenneth Lasyone  
-**License:** MIT  
-**Platform:** .NET 6+
-
----
-
 ## Overview
 
 **SphereSSL** is a lightweight console app that simplifies the process of generating **Let's Encrypt SSL certificates** using the **DNS-01 challenge** method.
