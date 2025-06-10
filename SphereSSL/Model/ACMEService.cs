@@ -21,9 +21,10 @@ using Newtonsoft.Json;
 using System.Runtime.Intrinsics.Arm;
 using Org.BouncyCastle.Crypto;
 using System.Diagnostics;
+using SphereSSL.View;
 
 
-namespace SphereSSL
+namespace SphereSSL.Model
 {
     public class AcmeService
     {

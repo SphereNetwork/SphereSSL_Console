@@ -14,6 +14,10 @@
     <Product>SPHERESSL</Product>
     <Description>SSL automation tool for ACME/Let's Encrypt integration</Description>
     <Copyright>© 2025 Kenny Lasyone</Copyright>
+    
+    
+     <ApplicationIcon>View\SphereSSL.ico</ApplicationIcon>
+    
   </PropertyGroup>
 
   <ItemGroup>
