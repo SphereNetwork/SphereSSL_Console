@@ -1,4 +1,4 @@
-# 🌐 SphereSSL - SSL Made Easy
+# SphereSSL - SSL Made Easy
 
 ## Overview
 
