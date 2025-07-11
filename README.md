@@ -2,7 +2,10 @@
 
 ## Overview
 
-**SphereSSL** is a lightweight console app that simplifies the process of generating **Let's Encrypt SSL certificates** using the **DNS-01 challenge** method.
+This project is depriciated.  See https://github.com/SphereNetwork/SphereSSL
+
+
+**SphereSSL- Console** is a lightweight console app that simplifies the process of generating **Let's Encrypt SSL certificates** using the **DNS-01 challenge** method.
 
 No wild configs. Just clean, user-friendly SSL magic in your terminal.  
 Perfect for devs who need certificates fast, without wrestling a yak in a cloud CLI.
